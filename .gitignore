@@ -1,0 +1,4 @@
+/.task/
+/build/
+/.secrets/
+.DS_Store

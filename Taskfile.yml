@@ -1,0 +1,362 @@
+version: "3"
+
+env:
+  GOCACHE: "{{.TASKFILE_DIR}}/.task/go-build-cache"
+
+tasks:
+  test:
+    desc: Run all Go tests, including BDD feature tests.
+    cmds:
+      - go test ./...
+
+  bdd:
+    desc: Run only the BDD feature tests.
+    cmds:
+      - go test ./features -v
+
+  run:
+    desc: Run the example application.
+    cmds:
+      - go run ./cmd/godogland
+
+  build-plugin:
+    desc: Build the GoLand plugin ZIP into the build directory.
+    vars:
+      GOLAND_HOME:
+        sh: |
+          if [ -n "${GOLAND_HOME:-}" ]; then
+            printf '%s\n' "$GOLAND_HOME"
+          elif [ -n "${GOLAND_APP:-}" ]; then
+            case "$GOLAND_APP" in
+              *.app) printf '%s\n' "$GOLAND_APP/Contents" ;;
+              *) printf '%s\n' "$GOLAND_APP" ;;
+            esac
+          else
+            printf '%s\n' "/Applications/GoLand.app/Contents"
+          fi
+      JBR_HOME:
+        sh: |
+          if [ -n "${JBR_HOME:-}" ]; then
+            printf '%s\n' "$JBR_HOME"
+          elif [ -d "{{.GOLAND_HOME}}/jbr/Contents/Home" ]; then
+            printf '%s\n' "{{.GOLAND_HOME}}/jbr/Contents/Home"
+          else
+            printf '%s\n' "{{.GOLAND_HOME}}/jbr"
+          fi
+      GHERKIN_PLUGIN_JAR:
+        sh: |
+          if [ -n "${GHERKIN_PLUGIN_JAR:-}" ]; then
+            printf '%s\n' "$GHERKIN_PLUGIN_JAR"
+            exit 0
+          fi
+          found="$(find .task/plugins \
+            -path "*/gherkin/lib/gherkin.jar" \
+            -type f \
+            2>/dev/null \
+            | sort -r \
+            | head -n 1)"
+          if [ -n "$found" ]; then
+            printf '%s\n' "$found"
+            exit 0
+          fi
+          find "$HOME/Library/Application Support/JetBrains" \
+            -path "*/GoLand*/plugins/gherkin/lib/gherkin.jar" \
+            -type f \
+            2>/dev/null \
+            | sort -r \
+            | head -n 1
+      PLUGIN_ID: godogland-bdd-runner
+      PLUGIN_BUILD_DIR: build/{{.PLUGIN_ID}}
+      CLASSES_DIR: build/plugin-classes
+      JAR_ROOT_DIR: build/plugin-jar-root
+    preconditions:
+      - sh: test -d "{{.GOLAND_HOME}}"
+        msg: Could not find GoLand home at {{.GOLAND_HOME}}. Set GOLAND_HOME=/path/to/GoLand/Contents or run `task download-ci-goland`.
+      - sh: test -n "{{.GHERKIN_PLUGIN_JAR}}"
+        msg: Could not find gherkin.jar under $HOME/Library/Application Support/JetBrains/GoLand*/plugins/gherkin/lib.
+    cmds:
+      - rm -rf build/{{.PLUGIN_ID}}.zip {{.PLUGIN_BUILD_DIR}} {{.CLASSES_DIR}} {{.JAR_ROOT_DIR}}
+      - mkdir -p {{.CLASSES_DIR}} {{.PLUGIN_BUILD_DIR}}/lib {{.JAR_ROOT_DIR}}
+      - "{{.JBR_HOME}}/bin/javac -cp '{{.GOLAND_HOME}}/lib/*:{{.GOLAND_HOME}}/plugins/go-plugin/lib/*:{{.GHERKIN_PLUGIN_JAR}}' -d {{.CLASSES_DIR}} $(find goland-plugin/src/main/java -name '*.java')"
+      - cp -R {{.CLASSES_DIR}}/. {{.JAR_ROOT_DIR}}/
+      - cp -R goland-plugin/src/main/resources/. {{.JAR_ROOT_DIR}}/
+      - find {{.JAR_ROOT_DIR}} -name .DS_Store -delete
+      - cd {{.JAR_ROOT_DIR}} && zip -qr ../{{.PLUGIN_ID}}/lib/{{.PLUGIN_ID}}.jar .
+      - cd build && zip -qr {{.PLUGIN_ID}}.zip {{.PLUGIN_ID}}
+
+  download-ci-goland:
+    desc: Download the pinned GoLand IDE used by CI.
+    vars:
+      GOLAND_VERSION:
+        sh: printf '%s\n' "${GOLAND_VERSION:-2025.2.1}"
+      GOLAND_CI_DIR: .task/ides
+      GOLAND_CI_HOME: "{{.GOLAND_CI_DIR}}/GoLand-{{.GOLAND_VERSION}}"
+      GOLAND_CI_EXTRACT_DIR: "{{.GOLAND_CI_DIR}}/extract-{{.GOLAND_VERSION}}"
+      GOLAND_CI_ARCHIVE: "{{.GOLAND_CI_DIR}}/goland-{{.GOLAND_VERSION}}.tar.gz"
+      GOLAND_CI_URL: "https://download.jetbrains.com/go/goland-{{.GOLAND_VERSION}}.tar.gz"
+    status:
+      - test -d {{.GOLAND_CI_HOME}}
+    cmds:
+      - mkdir -p {{.GOLAND_CI_DIR}}
+      - curl -fsSL -o {{.GOLAND_CI_ARCHIVE}} {{.GOLAND_CI_URL}}
+      - rm -rf {{.GOLAND_CI_HOME}} {{.GOLAND_CI_EXTRACT_DIR}}
+      - mkdir -p {{.GOLAND_CI_EXTRACT_DIR}}
+      - tar -xzf {{.GOLAND_CI_ARCHIVE}} -C {{.GOLAND_CI_EXTRACT_DIR}}
+      - mv "$(find {{.GOLAND_CI_EXTRACT_DIR}} -maxdepth 1 -type d -name 'GoLand-*' | head -n 1)" {{.GOLAND_CI_HOME}}
+      - rm -rf {{.GOLAND_CI_EXTRACT_DIR}}
+
+  download-ci-gherkin:
+    desc: Download the Gherkin plugin matching the pinned CI GoLand build.
+    vars:
+      GOLAND_BUILD:
+        sh: printf '%s\n' "${GOLAND_BUILD:-252.25557.175}"
+      GHERKIN_CI_DIR: .task/plugins/gherkin-{{.GOLAND_BUILD}}
+      GHERKIN_CI_ARCHIVE: .task/plugins/gherkin-{{.GOLAND_BUILD}}.zip
+      GHERKIN_CI_URL: "https://plugins.jetbrains.com/pluginManager?action=download&id=gherkin&build={{.GOLAND_BUILD}}"
+      GHERKIN_CI_JAR: "{{.GHERKIN_CI_DIR}}/gherkin/lib/gherkin.jar"
+    status:
+      - test -f {{.GHERKIN_CI_JAR}}
+    cmds:
+      - mkdir -p .task/plugins
+      - curl -fsSL -o {{.GHERKIN_CI_ARCHIVE}} "{{.GHERKIN_CI_URL}}"
+      - rm -rf {{.GHERKIN_CI_DIR}}
+      - mkdir -p {{.GHERKIN_CI_DIR}}
+      - unzip -q {{.GHERKIN_CI_ARCHIVE}} -d {{.GHERKIN_CI_DIR}}
+
+  test-plugin-java:
+    desc: Run lightweight Java unit tests for GoLand plugin logic.
+    vars:
+      GOLAND_HOME:
+        sh: |
+          if [ -n "${GOLAND_HOME:-}" ]; then
+            printf '%s\n' "$GOLAND_HOME"
+          elif [ -n "${GOLAND_APP:-}" ]; then
+            case "$GOLAND_APP" in
+              *.app) printf '%s\n' "$GOLAND_APP/Contents" ;;
+              *) printf '%s\n' "$GOLAND_APP" ;;
+            esac
+          else
+            printf '%s\n' "/Applications/GoLand.app/Contents"
+          fi
+      JBR_HOME:
+        sh: |
+          if [ -n "${JBR_HOME:-}" ]; then
+            printf '%s\n' "$JBR_HOME"
+          elif [ -d "{{.GOLAND_HOME}}/jbr/Contents/Home" ]; then
+            printf '%s\n' "{{.GOLAND_HOME}}/jbr/Contents/Home"
+          else
+            printf '%s\n' "{{.GOLAND_HOME}}/jbr"
+          fi
+      GHERKIN_PLUGIN_JAR:
+        sh: |
+          if [ -n "${GHERKIN_PLUGIN_JAR:-}" ]; then
+            printf '%s\n' "$GHERKIN_PLUGIN_JAR"
+            exit 0
+          fi
+          found="$(find .task/plugins \
+            -path "*/gherkin/lib/gherkin.jar" \
+            -type f \
+            2>/dev/null \
+            | sort -r \
+            | head -n 1)"
+          if [ -n "$found" ]; then
+            printf '%s\n' "$found"
+            exit 0
+          fi
+          find "$HOME/Library/Application Support/JetBrains" \
+            -path "*/GoLand*/plugins/gherkin/lib/gherkin.jar" \
+            -type f \
+            2>/dev/null \
+            | sort -r \
+            | head -n 1
+      PLUGIN_TEST_MAIN_CLASSES_DIR: build/plugin-test-main-classes
+      PLUGIN_TEST_CLASSES_DIR: build/plugin-test-classes
+      PLUGIN_TEST_CLASSPATH: "{{.GOLAND_HOME}}/lib/*:{{.GOLAND_HOME}}/plugins/go-plugin/lib/*:{{.GHERKIN_PLUGIN_JAR}}"
+    preconditions:
+      - sh: test -n "{{.GHERKIN_PLUGIN_JAR}}"
+        msg: Could not find gherkin.jar under $HOME/Library/Application Support/JetBrains/GoLand*/plugins/gherkin/lib.
+      - sh: test -x "{{.JBR_HOME}}/bin/javac"
+        msg: Could not find javac in {{.JBR_HOME}}.
+      - sh: test -x "{{.JBR_HOME}}/bin/java"
+        msg: Could not find java in {{.JBR_HOME}}.
+    cmds:
+      - rm -rf {{.PLUGIN_TEST_MAIN_CLASSES_DIR}} {{.PLUGIN_TEST_CLASSES_DIR}}
+      - mkdir -p {{.PLUGIN_TEST_MAIN_CLASSES_DIR}} {{.PLUGIN_TEST_CLASSES_DIR}}
+      - "{{.JBR_HOME}}/bin/javac -cp '{{.PLUGIN_TEST_CLASSPATH}}' -d {{.PLUGIN_TEST_MAIN_CLASSES_DIR}} $(find goland-plugin/src/main/java -name '*.java')"
+      - "{{.JBR_HOME}}/bin/javac -cp '{{.PLUGIN_TEST_MAIN_CLASSES_DIR}}:{{.PLUGIN_TEST_CLASSPATH}}' -d {{.PLUGIN_TEST_CLASSES_DIR}} $(find goland-plugin/src/test/java -name '*.java')"
+      - "{{.JBR_HOME}}/bin/java -cp '{{.PLUGIN_TEST_CLASSES_DIR}}:{{.PLUGIN_TEST_MAIN_CLASSES_DIR}}:{{.PLUGIN_TEST_CLASSPATH}}' pl.godogland.bdd.GodogPluginUnitTests"
+
+  download-plugin-verifier:
+    desc: Download the JetBrains IntelliJ Plugin Verifier CLI.
+    vars:
+      PLUGIN_VERIFIER_VERSION:
+        sh: printf '%s\n' "${PLUGIN_VERIFIER_VERSION:-1.403}"
+      PLUGIN_VERIFIER_DIR: .task/plugin-verifier
+      PLUGIN_VERIFIER_JAR: "{{.PLUGIN_VERIFIER_DIR}}/verifier-cli-{{.PLUGIN_VERIFIER_VERSION}}-all.jar"
+      PLUGIN_VERIFIER_URL: "https://packages.jetbrains.team/maven/p/intellij-plugin-verifier/intellij-plugin-verifier/org/jetbrains/intellij/plugins/verifier-cli/{{.PLUGIN_VERIFIER_VERSION}}/verifier-cli-{{.PLUGIN_VERIFIER_VERSION}}-all.jar"
+    status:
+      - test -f {{.PLUGIN_VERIFIER_JAR}}
+    cmds:
+      - mkdir -p {{.PLUGIN_VERIFIER_DIR}}
+      - curl -fsSL -o {{.PLUGIN_VERIFIER_JAR}} {{.PLUGIN_VERIFIER_URL}}
+
+  verify-plugin:
+    desc: Run JetBrains Plugin Verifier against the built GoLand plugin ZIP.
+    deps:
+      - build-plugin
+      - download-plugin-verifier
+    vars:
+      GOLAND_HOME:
+        sh: |
+          if [ -n "${GOLAND_HOME:-}" ]; then
+            printf '%s\n' "$GOLAND_HOME"
+          elif [ -n "${GOLAND_APP:-}" ]; then
+            case "$GOLAND_APP" in
+              *.app) printf '%s\n' "$GOLAND_APP/Contents" ;;
+              *) printf '%s\n' "$GOLAND_APP" ;;
+            esac
+          else
+            printf '%s\n' "/Applications/GoLand.app/Contents"
+          fi
+      JBR_HOME:
+        sh: |
+          if [ -n "${JBR_HOME:-}" ]; then
+            printf '%s\n' "$JBR_HOME"
+          elif [ -d "{{.GOLAND_HOME}}/jbr/Contents/Home" ]; then
+            printf '%s\n' "{{.GOLAND_HOME}}/jbr/Contents/Home"
+          else
+            printf '%s\n' "{{.GOLAND_HOME}}/jbr"
+          fi
+      PLUGIN_VERIFIER_VERSION:
+        sh: printf '%s\n' "${PLUGIN_VERIFIER_VERSION:-1.403}"
+      PLUGIN_VERIFIER_JAR: ".task/plugin-verifier/verifier-cli-{{.PLUGIN_VERIFIER_VERSION}}-all.jar"
+      PLUGIN_VERIFIER_HOME: ".task/plugin-verifier-home"
+      PLUGIN_VERIFIER_REPORTS: build/plugin-verifier-reports
+      PLUGIN_ZIP: build/godogland-bdd-runner.zip
+    preconditions:
+      - sh: test -f {{.PLUGIN_ZIP}}
+        msg: Plugin ZIP not found. Run `task build-plugin` first.
+      - sh: test -d "{{.GOLAND_HOME}}"
+        msg: Could not find GoLand home at {{.GOLAND_HOME}}. Set GOLAND_HOME=/path/to/GoLand/Contents or run `task download-ci-goland`.
+      - sh: test -x "{{.JBR_HOME}}/bin/java"
+        msg: Could not find Java runtime in {{.JBR_HOME}}.
+      - sh: test -f {{.PLUGIN_VERIFIER_JAR}}
+        msg: Plugin Verifier JAR not found. Run `task download-plugin-verifier` first.
+    cmds:
+      - mkdir -p {{.PLUGIN_VERIFIER_REPORTS}}
+      - "{{.JBR_HOME}}/bin/java -Dplugin.verifier.home.dir={{.PLUGIN_VERIFIER_HOME}} -jar {{.PLUGIN_VERIFIER_JAR}} -verification-reports-dir {{.PLUGIN_VERIFIER_REPORTS}} -verification-reports-formats plain,html -missing-layout-classpath-file skip-silently check-plugin {{.PLUGIN_ZIP}} {{.GOLAND_HOME}}"
+
+  download-plugin-signer:
+    desc: Download the JetBrains Marketplace ZIP Signer CLI.
+    vars:
+      PLUGIN_SIGNER_VERSION:
+        sh: printf '%s\n' "${PLUGIN_SIGNER_VERSION:-0.1.43}"
+      PLUGIN_SIGNER_DIR: .task/plugin-signer
+      PLUGIN_SIGNER_JAR: "{{.PLUGIN_SIGNER_DIR}}/marketplace-zip-signer-cli-{{.PLUGIN_SIGNER_VERSION}}.jar"
+      PLUGIN_SIGNER_URL: "https://repo1.maven.org/maven2/org/jetbrains/marketplace-zip-signer-cli/{{.PLUGIN_SIGNER_VERSION}}/marketplace-zip-signer-cli-{{.PLUGIN_SIGNER_VERSION}}.jar"
+    status:
+      - test -f {{.PLUGIN_SIGNER_JAR}}
+    cmds:
+      - mkdir -p {{.PLUGIN_SIGNER_DIR}}
+      - curl -fsSL -o {{.PLUGIN_SIGNER_JAR}} {{.PLUGIN_SIGNER_URL}}
+
+  sign-plugin:
+    desc: Sign the GoLand plugin ZIP with JetBrains Marketplace ZIP Signer.
+    deps:
+      - build-plugin
+      - download-plugin-signer
+    silent: true
+    vars:
+      GOLAND_HOME:
+        sh: |
+          if [ -n "${GOLAND_HOME:-}" ]; then
+            printf '%s\n' "$GOLAND_HOME"
+          elif [ -n "${GOLAND_APP:-}" ]; then
+            case "$GOLAND_APP" in
+              *.app) printf '%s\n' "$GOLAND_APP/Contents" ;;
+              *) printf '%s\n' "$GOLAND_APP" ;;
+            esac
+          else
+            printf '%s\n' "/Applications/GoLand.app/Contents"
+          fi
+      JBR_HOME:
+        sh: |
+          if [ -n "${JBR_HOME:-}" ]; then
+            printf '%s\n' "$JBR_HOME"
+          elif [ -d "{{.GOLAND_HOME}}/jbr/Contents/Home" ]; then
+            printf '%s\n' "{{.GOLAND_HOME}}/jbr/Contents/Home"
+          else
+            printf '%s\n' "{{.GOLAND_HOME}}/jbr"
+          fi
+      PLUGIN_SIGNER_VERSION:
+        sh: printf '%s\n' "${PLUGIN_SIGNER_VERSION:-0.1.43}"
+      PLUGIN_SIGNER_JAR: ".task/plugin-signer/marketplace-zip-signer-cli-{{.PLUGIN_SIGNER_VERSION}}.jar"
+      PLUGIN_ZIP: build/godogland-bdd-runner.zip
+      SIGNED_PLUGIN_ZIP: build/godogland-bdd-runner-signed.zip
+      PLUGIN_SIGN_CERT_FILE:
+        sh: printf '%s\n' "${PLUGIN_SIGN_CERT_FILE:-.secrets/plugin-signing/chain.crt}"
+      PLUGIN_SIGN_KEY_FILE:
+        sh: printf '%s\n' "${PLUGIN_SIGN_KEY_FILE:-.secrets/plugin-signing/private.pem}"
+      PLUGIN_SIGN_KEY_PASSWORD:
+        sh: printf '%s\n' "${PLUGIN_SIGN_KEY_PASSWORD:-}"
+    preconditions:
+      - sh: test -f {{.PLUGIN_ZIP}}
+        msg: Plugin ZIP not found. Run `task build-plugin` first.
+      - sh: test -x "{{.JBR_HOME}}/bin/java"
+        msg: Could not find Java runtime in {{.JBR_HOME}}.
+      - sh: test -f {{.PLUGIN_SIGNER_JAR}}
+        msg: ZIP Signer JAR not found. Run `task download-plugin-signer` first.
+      - sh: test -f "{{.PLUGIN_SIGN_CERT_FILE}}"
+        msg: Certificate chain not found. Set PLUGIN_SIGN_CERT_FILE or create .secrets/plugin-signing/chain.crt.
+      - sh: test -f "{{.PLUGIN_SIGN_KEY_FILE}}"
+        msg: Private key not found. Set PLUGIN_SIGN_KEY_FILE or create .secrets/plugin-signing/private.pem.
+      - sh: test -n "{{.PLUGIN_SIGN_KEY_PASSWORD}}"
+        msg: PLUGIN_SIGN_KEY_PASSWORD is required.
+    cmds:
+      - "{{.JBR_HOME}}/bin/java -jar {{.PLUGIN_SIGNER_JAR}} sign -in {{.PLUGIN_ZIP}} -out {{.SIGNED_PLUGIN_ZIP}} -cert-file \"{{.PLUGIN_SIGN_CERT_FILE}}\" -key-file \"{{.PLUGIN_SIGN_KEY_FILE}}\" -key-pass \"{{.PLUGIN_SIGN_KEY_PASSWORD}}\""
+      - echo "Signed plugin written to {{.SIGNED_PLUGIN_ZIP}}"
+
+  verify-plugin-signature:
+    desc: Verify the signed plugin ZIP signature.
+    deps:
+      - download-plugin-signer
+    vars:
+      GOLAND_HOME:
+        sh: |
+          if [ -n "${GOLAND_HOME:-}" ]; then
+            printf '%s\n' "$GOLAND_HOME"
+          elif [ -n "${GOLAND_APP:-}" ]; then
+            case "$GOLAND_APP" in
+              *.app) printf '%s\n' "$GOLAND_APP/Contents" ;;
+              *) printf '%s\n' "$GOLAND_APP" ;;
+            esac
+          else
+            printf '%s\n' "/Applications/GoLand.app/Contents"
+          fi
+      JBR_HOME:
+        sh: |
+          if [ -n "${JBR_HOME:-}" ]; then
+            printf '%s\n' "$JBR_HOME"
+          elif [ -d "{{.GOLAND_HOME}}/jbr/Contents/Home" ]; then
+            printf '%s\n' "{{.GOLAND_HOME}}/jbr/Contents/Home"
+          else
+            printf '%s\n' "{{.GOLAND_HOME}}/jbr"
+          fi
+      PLUGIN_SIGNER_VERSION:
+        sh: printf '%s\n' "${PLUGIN_SIGNER_VERSION:-0.1.43}"
+      PLUGIN_SIGNER_JAR: ".task/plugin-signer/marketplace-zip-signer-cli-{{.PLUGIN_SIGNER_VERSION}}.jar"
+      SIGNED_PLUGIN_ZIP:
+        sh: printf '%s\n' "${SIGNED_PLUGIN_ZIP:-build/godogland-bdd-runner-signed.zip}"
+      PLUGIN_SIGN_CERT_FILE:
+        sh: printf '%s\n' "${PLUGIN_SIGN_CERT_FILE:-.secrets/plugin-signing/chain.crt}"
+    preconditions:
+      - sh: test -f "{{.SIGNED_PLUGIN_ZIP}}"
+        msg: Signed plugin ZIP not found. Run `task sign-plugin` first.
+      - sh: test -x "{{.JBR_HOME}}/bin/java"
+        msg: Could not find Java runtime in {{.JBR_HOME}}.
+      - sh: test -f {{.PLUGIN_SIGNER_JAR}}
+        msg: ZIP Signer JAR not found. Run `task download-plugin-signer` first.
+      - sh: test -f "{{.PLUGIN_SIGN_CERT_FILE}}"
+        msg: Certificate chain not found. Set PLUGIN_SIGN_CERT_FILE or create .secrets/plugin-signing/chain.crt.
+    cmds:
+      - "{{.JBR_HOME}}/bin/java -jar {{.PLUGIN_SIGNER_JAR}} verify -in \"{{.SIGNED_PLUGIN_ZIP}}\" -cert \"{{.PLUGIN_SIGN_CERT_FILE}}\""

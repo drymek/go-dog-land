@@ -1,0 +1,170 @@
+name: Plugin
+
+'on':
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  GOLAND_BUILD: 252.25557.175
+  GOLAND_VERSION: 2025.2.1
+  GOLAND_HOME: .task/ides/GoLand-2025.2.1
+  GHERKIN_PLUGIN_JAR: .task/plugins/gherkin-252.25557.175/gherkin/lib/gherkin.jar
+
+jobs:
+  plugin-tests:
+    name: Plugin Java tests
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go for Task
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+
+      - name: Install Task
+        run: |
+          go install github.com/go-task/task/v3/cmd/task@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Cache JetBrains test dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .task/ides
+            .task/plugins
+          key: ${{ runner.os }}-jetbrains-${{ env.GOLAND_BUILD }}
+
+      - name: Download GoLand and Gherkin plugin
+        run: task download-ci-goland download-ci-gherkin
+
+      - name: Run plugin Java tests
+        run: task test-plugin-java
+
+  signed-release:
+    name: Signed release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go for Task
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+
+      - name: Install Task
+        run: |
+          go install github.com/go-task/task/v3/cmd/task@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Cache JetBrains release dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .task/ides
+            .task/plugins
+            .task/plugin-signer
+            .task/plugin-verifier
+            .task/plugin-verifier-home
+          key: ${{ runner.os }}-jetbrains-release-${{ env.GOLAND_BUILD }}
+
+      - name: Download GoLand and Gherkin plugin
+        run: task download-ci-goland download-ci-gherkin
+
+      - name: Run plugin Java tests
+        run: task test-plugin-java
+
+      - name: Verify plugin compatibility
+        run: task verify-plugin
+
+      - name: Read plugin version
+        id: version
+        run: |
+          VERSION="$(python3 -c "import xml.etree.ElementTree as ET; print(ET.parse('goland-plugin/src/main/resources/META-INF/plugin.xml').findtext('version'))")"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve merged PR title
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const response = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner,
+              repo,
+              commit_sha: context.sha,
+            });
+            const pr = response.data.find((item) => item.merged_at) || response.data[0];
+            const fallbackTitle = context.payload.head_commit?.message?.split('\n')[0] || 'GoDogLand BDD Runner release';
+            core.setOutput('title', pr?.title || fallbackTitle);
+            core.setOutput('number', pr?.number ? `#${pr.number}` : '');
+
+      - name: Write signing secrets
+        env:
+          PLUGIN_SIGN_CERTIFICATE_CHAIN: ${{ secrets.PLUGIN_SIGN_CERTIFICATE_CHAIN }}
+          PLUGIN_SIGN_PRIVATE_KEY: ${{ secrets.PLUGIN_SIGN_PRIVATE_KEY }}
+        run: |
+          test -n "$PLUGIN_SIGN_CERTIFICATE_CHAIN"
+          test -n "$PLUGIN_SIGN_PRIVATE_KEY"
+          mkdir -p .secrets/plugin-signing
+          printf '%s\n' "$PLUGIN_SIGN_CERTIFICATE_CHAIN" > .secrets/plugin-signing/chain.crt
+          printf '%s\n' "$PLUGIN_SIGN_PRIVATE_KEY" > .secrets/plugin-signing/private.pem
+          chmod 600 .secrets/plugin-signing/chain.crt .secrets/plugin-signing/private.pem
+
+      - name: Sign plugin ZIP
+        env:
+          PLUGIN_SIGN_KEY_PASSWORD: ${{ secrets.PLUGIN_SIGN_KEY_PASSWORD }}
+        run: task sign-plugin
+
+      - name: Verify plugin ZIP signature
+        run: task verify-plugin-signature
+
+      - name: Create tag and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          PR_TITLE: ${{ steps.pr.outputs.title }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          git fetch --tags
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists. Bump <version> in plugin.xml before merging another release."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$PR_TITLE"
+          git push origin "$TAG"
+
+          {
+            printf '%s\n\n' "$PR_TITLE"
+            if [ -n "$PR_NUMBER" ]; then
+              printf 'Merged PR: %s\n\n' "$PR_NUMBER"
+            fi
+            printf 'Signed plugin artifact: `godogland-bdd-runner-signed.zip`\n'
+          } > release-notes.md
+
+          gh release create "$TAG" \
+            build/godogland-bdd-runner-signed.zip \
+            --title "$TAG - $PR_TITLE" \
+            --notes-file release-notes.md

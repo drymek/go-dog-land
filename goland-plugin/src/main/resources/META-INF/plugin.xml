@@ -1,0 +1,81 @@
+<idea-plugin>
+  <id>pl.godogland.bdd.runner</id>
+  <name>GoDogLand BDD Runner</name>
+  <version>0.1.0</version>
+  <vendor url="https://github.com/drymek/go-dog-land" email="marcin@dryka.pl">GoDogLand</vendor>
+  <idea-version since-build="241"/>
+
+  <description><![CDATA[
+    <p>
+      <b>GoDogLand BDD Runner</b> adds a focused Godog/Cucumber workflow to GoLand.
+      It lets you work with Go BDD scenarios directly from <code>.feature</code> files,
+      while keeping the test execution in Go's native test runner.
+    </p>
+    <p>
+      The plugin adds gutter actions for running and debugging whole features or individual
+      scenarios, saves edited files before execution, supports custom environment variables,
+      and maps Go test results back to the matching Gherkin scenarios.
+    </p>
+    <p>
+      Compatible with GoLand 2024.1+ / build 241+.
+    </p>
+    <p>
+      It also improves day-to-day navigation between Gherkin steps and Godog step definitions:
+      Cmd+B from a feature step jumps to <code>ctx.Step(...)</code>, Find Usages from a step
+      definition lists matching feature steps, and inspections highlight undefined, unused,
+      invalid, or ambiguous steps.
+    </p>
+    <ul>
+      <li>Run or debug <code>Feature</code> and <code>Scenario</code> lines from the gutter.</li>
+      <li>See pass/fail status icons beside recently executed BDD scenarios.</li>
+      <li>Navigate from <code>.feature</code> steps to Go step definitions and back.</li>
+      <li>Generate missing Go step definitions from undefined Gherkin steps.</li>
+      <li>Use GoLand's test tool window with links back to the related feature lines.</li>
+      <li>Configure environment variables used by Godog test runs.</li>
+    </ul>
+  ]]></description>
+
+  <change-notes><![CDATA[
+    <p>
+      Initial release with Godog/Cucumber gutter run and debug actions, feature and scenario
+      status icons, step navigation, BDD inspections, quick fixes for undefined steps,
+      GoLand test tool window integration, and configurable environment variables.
+    </p>
+  ]]></change-notes>
+
+  <depends>com.intellij.modules.platform</depends>
+  <depends>gherkin</depends>
+  <depends>org.jetbrains.plugins.go</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <projectConfigurable groupId="tools"
+                         id="godogland.bdd.runner"
+                         displayName="GoDogLand BDD Runner"
+                         instance="pl.godogland.bdd.GodogBddSettingsConfigurable"/>
+    <runLineMarkerContributor language="Gherkin" implementationClass="pl.godogland.bdd.GodogBddRunLineMarkerContributor" order="first"/>
+    <testStatusListener implementation="pl.godogland.bdd.GodogTestTreeLocationListener"/>
+    <findUsagesHandlerFactory implementation="pl.godogland.bdd.GodogFindUsagesHandlerFactory" order="first"/>
+    <gotoDeclarationHandler implementation="pl.godogland.bdd.GodogGotoDeclarationHandler" order="first"/>
+    <targetElementEvaluator language="go" implementationClass="pl.godogland.bdd.GodogTargetElementEvaluator"/>
+    <localInspection language="go"
+                     shortName="GodogUnusedStepDefinition"
+                     displayName="Unused or invalid Godog step definition"
+                     groupName="Godog"
+                     enabledByDefault="true"
+                     level="WARNING"
+                     implementationClass="pl.godogland.bdd.GodogStepDefinitionInspection"/>
+    <localInspection language="Gherkin"
+                     shortName="GodogAmbiguousStep"
+                     displayName="Ambiguous Godog step"
+                     groupName="Godog"
+                     enabledByDefault="true"
+                     level="WARNING"
+                     implementationClass="pl.godogland.bdd.GodogAmbiguousStepInspection"/>
+    <xdebugger.breakpointType implementation="pl.godogland.bdd.GodogFeatureBreakpointType"/>
+    <notificationGroup id="GoDogLand BDD Runner" displayType="BALLOON"/>
+  </extensions>
+
+  <extensions defaultExtensionNs="org.jetbrains.plugins.cucumber.steps">
+    <cucumberJvmExtensionPoint implementation="pl.godogland.bdd.GodogCucumberExtension"/>
+  </extensions>
+</idea-plugin>
