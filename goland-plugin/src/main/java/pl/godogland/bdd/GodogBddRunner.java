@@ -18,8 +18,11 @@ import com.intellij.execution.runners.ExecutionEnvironment;
 import com.intellij.execution.runners.ExecutionEnvironmentBuilder;
 import com.intellij.notification.NotificationGroupManager;
 import com.intellij.notification.NotificationType;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.module.Module;
+import com.intellij.openapi.module.ModuleUtilCore;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -27,15 +30,13 @@ import com.intellij.psi.PsiFile;
 import com.intellij.util.messages.MessageBusConnection;
 import org.jetbrains.annotations.NotNull;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
 final class GodogBddRunner {
+    private static final Logger LOG = Logger.getInstance(GodogBddRunner.class);
+
     private GodogBddRunner() {
     }
 
@@ -48,28 +49,47 @@ final class GodogBddRunner {
             }
 
             saveDocuments(file);
+            String featurePath = file.getVirtualFile().getPath();
+            String executionRoot = GodogTestPackageResolver.executionRootDirectory(basePath, featurePath);
+            String testDirectory = GodogTestPackageResolver.testDirectoryPath(basePath, featurePath);
+            String packagePath = GodogTestPackageResolver.packagePath(basePath, featurePath);
+            Module module = ModuleUtilCore.findModuleForFile(file.getVirtualFile(), project);
 
             GoTestRunConfigurationType type = GoTestRunConfigurationType.getInstance();
             ConfigurationFactory factory = type.getFactory();
             RunManager runManager = RunManager.getInstance(project);
             RunnerAndConfigurationSettings settings = runManager.createConfiguration(target.title(), factory);
             GoTestRunConfiguration configuration = (GoTestRunConfiguration) settings.getConfiguration();
+            if (module != null) {
+                configuration.getConfigurationModule().setModule(module);
+            }
 
-            configuration.setKind(GoBuildingRunConfiguration.Kind.PACKAGE);
-            configuration.setRootDirectory(basePath);
-            configuration.setPackage(packagePath(basePath, file.getVirtualFile().getPath()));
-            configuration.setWorkingDirectory(basePath);
+            configuration.setKind(GoBuildingRunConfiguration.Kind.DIRECTORY);
+            configuration.setRootDirectory(executionRoot);
+            configuration.setDirectoryPath(testDirectory);
+            configuration.setWorkingDirectory(executionRoot);
             configuration.setTestFramework(GoTestFramework.fromName("gotest"));
             configuration.setPassParentEnvironment(true);
 
             Map<String, String> env = new HashMap<>(GodogBddEnvironment.userEnvironment(project));
-            env.put("GODOGLAND_BDD_FEATURE", relativeFeaturePath(basePath, file.getVirtualFile().getPath()));
+            env.put("GODOGLAND_BDD_FEATURE", featurePath);
+            String pattern = null;
             if (target.type() == GodogBddRunTarget.Type.SCENARIO) {
-                String pattern = "^TestFeatures$/" + Pattern.quote(target.testName()) + "$";
+                pattern = "^TestFeatures$/" + Pattern.quote(target.testName()) + "$";
                 configuration.setPattern(pattern);
                 env.put("GODOGLAND_BDD_SCENARIO", pattern);
             }
             configuration.setCustomEnvironment(env);
+
+            LOG.info("GoDogLand run config: name=" + target.title()
+                    + ", feature=" + featurePath
+                    + ", kind=DIRECTORY"
+                    + ", executionRoot=" + executionRoot
+                    + ", testDirectory=" + testDirectory
+                    + ", package=" + packagePath
+                    + ", workingDirectory=" + executionRoot
+                    + ", pattern=" + (pattern == null ? "<feature>" : pattern)
+                    + ", module=" + (module == null ? "<none>" : module.getName()));
 
             runManager.setTemporaryConfiguration(settings);
             runManager.setSelectedConfiguration(settings);
@@ -139,42 +159,6 @@ final class GodogBddRunner {
         }
 
         builder.buildAndExecute();
-    }
-
-    private static String relativeFeaturePath(String basePath, String featurePath) {
-        try {
-            return Path.of(basePath).relativize(Path.of(featurePath)).toString().replace('\\', '/');
-        } catch (IllegalArgumentException e) {
-            return featurePath;
-        }
-    }
-
-    private static String packagePath(String basePath, String featurePath) {
-        String relativeFeaturePath = relativeFeaturePath(basePath, featurePath);
-        String relativeDirectory = Path.of(relativeFeaturePath).getParent() == null
-                ? "."
-                : Path.of(relativeFeaturePath).getParent().toString().replace('\\', '/');
-        String modulePath = modulePath(basePath);
-        if (modulePath == null || ".".equals(relativeDirectory)) {
-            return modulePath == null ? relativeDirectory : modulePath;
-        }
-
-        return modulePath + "/" + relativeDirectory;
-    }
-
-    private static String modulePath(String basePath) {
-        try {
-            List<String> lines = Files.readAllLines(Path.of(basePath, "go.mod"));
-            for (String line : lines) {
-                String trimmed = line.trim();
-                if (trimmed.startsWith("module ")) {
-                    return trimmed.substring("module ".length()).trim();
-                }
-            }
-        } catch (IOException ignored) {
-        }
-
-        return null;
     }
 
     private static void notifyError(Project project, String message) {

@@ -16,7 +16,7 @@ final class GodogBddStatusRefresher {
         ApplicationManager.getApplication().invokeLater(() -> {
             PsiFile psiFile = GodogReadAction.compute(() -> PsiManager.getInstance(project).findFile(file));
             if (psiFile != null) {
-                DaemonCodeAnalyzer.getInstance(project).restart(psiFile);
+                DaemonCodeAnalyzer.getInstance(project).restart(psiFile, GodogBddStatusRefresher.class);
             }
         });
     }

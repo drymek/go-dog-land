@@ -34,13 +34,13 @@ public class GodogCucumberExtension implements CucumberJvmExtensionPoint {
     private static final StepDefinitionCreator STEP_DEFINITION_CREATOR = new GodogStepDefinitionCreator();
 
     @Override
-    public boolean isStepLikeFile(@NotNull PsiElement child, @NotNull PsiElement parent) {
-        return isGoFile(child.getContainingFile());
+    public boolean isStepLikeFile(@NotNull PsiElement element) {
+        return isGoFile(element.getContainingFile());
     }
 
     @Override
-    public boolean isWritableStepLikeFile(@NotNull PsiElement child, @NotNull PsiElement parent) {
-        return isStepLikeFile(child, parent);
+    public boolean isWritableStepLikeFile(@NotNull PsiElement element) {
+        return isStepLikeFile(element);
     }
 
     @Override

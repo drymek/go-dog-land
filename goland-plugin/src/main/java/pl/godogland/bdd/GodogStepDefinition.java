@@ -16,7 +16,6 @@ final class GodogStepDefinition extends AbstractStepDefinition {
     GodogStepDefinition(@NotNull PsiElement element, @NotNull String regex) {
         super(element);
         this.regex = regex;
-        setCucumberRegex(regex);
     }
 
     @Override
@@ -29,7 +28,6 @@ final class GodogStepDefinition extends AbstractStepDefinition {
         return regex == null ? "" : regex;
     }
 
-    @Override
     public @NotNull Collection<GherkinStep> findSteps(@NotNull SearchScope scope) {
         return GodogFeatureUsageFinder.findUsages(this, scope);
     }

@@ -1,9 +1,9 @@
 <idea-plugin>
   <id>pl.godogland.bdd.runner</id>
   <name>GoDogLand BDD Runner</name>
-  <version>0.1.0</version>
+  <version>0.1.2</version>
   <vendor url="https://github.com/drymek/go-dog-land" email="marcin@dryka.pl">GoDogLand</vendor>
-  <idea-version since-build="241"/>
+  <idea-version since-build="261"/>
 
   <description><![CDATA[
     <p>
@@ -17,7 +17,7 @@
       and maps Go test results back to the matching Gherkin scenarios.
     </p>
     <p>
-      Compatible with GoLand 2024.1+ / build 241+.
+      Compatible with GoLand 2026.1+ / build 261+.
     </p>
     <p>
       It also improves day-to-day navigation between Gherkin steps and Godog step definitions:

@@ -191,7 +191,7 @@ runner.
 
 ## Requirements
 
-- GoLand 2024.1+ / build 241+ with the Go plugin
+- GoLand 2026.1+ / build 261+ with the Go plugin
 - JetBrains Gherkin plugin
 - Go and the dependencies from `go.mod`
 - [Task](https://taskfile.dev/) for the provided `Taskfile.yml`
