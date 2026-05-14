@@ -19,6 +19,11 @@ tasks:
     cmds:
       - go run ./cmd/godogland
 
+  diagnose-goland:
+    desc: Collect GoLand/Godog diagnostic data for this project.
+    cmds:
+      - bash scripts/godogland-diagnose.sh "{{.TASKFILE_DIR}}"
+
   build-plugin:
     desc: Build the GoLand plugin ZIP into the build directory.
     vars:
@@ -31,6 +36,8 @@ tasks:
               *.app) printf '%s\n' "$GOLAND_APP/Contents" ;;
               *) printf '%s\n' "$GOLAND_APP" ;;
             esac
+          elif [ -d ".task/ides/GoLand-2026.1" ]; then
+            printf '%s\n' ".task/ides/GoLand-2026.1"
           else
             printf '%s\n' "/Applications/GoLand.app/Contents"
           fi
@@ -40,6 +47,8 @@ tasks:
             printf '%s\n' "$JBR_HOME"
           elif [ -d "{{.GOLAND_HOME}}/jbr/Contents/Home" ]; then
             printf '%s\n' "{{.GOLAND_HOME}}/jbr/Contents/Home"
+          elif [ -d "/Applications/GoLand.app/Contents/jbr/Contents/Home" ]; then
+            printf '%s\n' "/Applications/GoLand.app/Contents/jbr/Contents/Home"
           else
             printf '%s\n' "{{.GOLAND_HOME}}/jbr"
           fi
@@ -88,7 +97,7 @@ tasks:
     desc: Download the pinned GoLand IDE used by CI.
     vars:
       GOLAND_VERSION:
-        sh: printf '%s\n' "${GOLAND_VERSION:-2025.2.1}"
+        sh: printf '%s\n' "${GOLAND_VERSION:-2026.1}"
       GOLAND_CI_DIR: .task/ides
       GOLAND_CI_HOME: "{{.GOLAND_CI_DIR}}/GoLand-{{.GOLAND_VERSION}}"
       GOLAND_CI_EXTRACT_DIR: "{{.GOLAND_CI_DIR}}/extract-{{.GOLAND_VERSION}}"
@@ -109,7 +118,7 @@ tasks:
     desc: Download the Gherkin plugin matching the pinned CI GoLand build.
     vars:
       GOLAND_BUILD:
-        sh: printf '%s\n' "${GOLAND_BUILD:-252.25557.175}"
+        sh: printf '%s\n' "${GOLAND_BUILD:-261.22158.291}"
       GHERKIN_CI_DIR: .task/plugins/gherkin-{{.GOLAND_BUILD}}
       GHERKIN_CI_ARCHIVE: .task/plugins/gherkin-{{.GOLAND_BUILD}}.zip
       GHERKIN_CI_URL: "https://plugins.jetbrains.com/pluginManager?action=download&id=gherkin&build={{.GOLAND_BUILD}}"
@@ -135,6 +144,8 @@ tasks:
               *.app) printf '%s\n' "$GOLAND_APP/Contents" ;;
               *) printf '%s\n' "$GOLAND_APP" ;;
             esac
+          elif [ -d ".task/ides/GoLand-2026.1" ]; then
+            printf '%s\n' ".task/ides/GoLand-2026.1"
           else
             printf '%s\n' "/Applications/GoLand.app/Contents"
           fi
@@ -144,6 +155,8 @@ tasks:
             printf '%s\n' "$JBR_HOME"
           elif [ -d "{{.GOLAND_HOME}}/jbr/Contents/Home" ]; then
             printf '%s\n' "{{.GOLAND_HOME}}/jbr/Contents/Home"
+          elif [ -d "/Applications/GoLand.app/Contents/jbr/Contents/Home" ]; then
+            printf '%s\n' "/Applications/GoLand.app/Contents/jbr/Contents/Home"
           else
             printf '%s\n' "{{.GOLAND_HOME}}/jbr"
           fi
@@ -215,6 +228,8 @@ tasks:
               *.app) printf '%s\n' "$GOLAND_APP/Contents" ;;
               *) printf '%s\n' "$GOLAND_APP" ;;
             esac
+          elif [ -d ".task/ides/GoLand-2026.1" ]; then
+            printf '%s\n' ".task/ides/GoLand-2026.1"
           else
             printf '%s\n' "/Applications/GoLand.app/Contents"
           fi
@@ -224,6 +239,8 @@ tasks:
             printf '%s\n' "$JBR_HOME"
           elif [ -d "{{.GOLAND_HOME}}/jbr/Contents/Home" ]; then
             printf '%s\n' "{{.GOLAND_HOME}}/jbr/Contents/Home"
+          elif [ -d "/Applications/GoLand.app/Contents/jbr/Contents/Home" ]; then
+            printf '%s\n' "/Applications/GoLand.app/Contents/jbr/Contents/Home"
           else
             printf '%s\n' "{{.GOLAND_HOME}}/jbr"
           fi
@@ -276,6 +293,8 @@ tasks:
               *.app) printf '%s\n' "$GOLAND_APP/Contents" ;;
               *) printf '%s\n' "$GOLAND_APP" ;;
             esac
+          elif [ -d ".task/ides/GoLand-2026.1" ]; then
+            printf '%s\n' ".task/ides/GoLand-2026.1"
           else
             printf '%s\n' "/Applications/GoLand.app/Contents"
           fi
@@ -285,6 +304,8 @@ tasks:
             printf '%s\n' "$JBR_HOME"
           elif [ -d "{{.GOLAND_HOME}}/jbr/Contents/Home" ]; then
             printf '%s\n' "{{.GOLAND_HOME}}/jbr/Contents/Home"
+          elif [ -d "/Applications/GoLand.app/Contents/jbr/Contents/Home" ]; then
+            printf '%s\n' "/Applications/GoLand.app/Contents/jbr/Contents/Home"
           else
             printf '%s\n' "{{.GOLAND_HOME}}/jbr"
           fi

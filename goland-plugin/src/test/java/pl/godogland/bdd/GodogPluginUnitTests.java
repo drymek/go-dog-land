@@ -1,6 +1,8 @@
 package pl.godogland.bdd;
 
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -18,6 +20,7 @@ public final class GodogPluginUnitTests {
         run("run result recording", GodogPluginUnitTests::runResultRecording);
         run("step definition generation", GodogPluginUnitTests::stepDefinitionGeneration);
         run("feature scenario normalization", GodogPluginUnitTests::featureScenarioNormalization);
+        run("test package resolution", GodogPluginUnitTests::testPackageResolution);
         run("step registration ranges", GodogPluginUnitTests::stepRegistrationRanges);
 
         System.out.println("Godog plugin unit tests passed (" + assertions + " assertions).");
@@ -122,6 +125,74 @@ public final class GodogPluginUnitTests {
                 normalize.invoke(null, "  Rewarding   a dog after a successful training session  "));
     }
 
+    private static void testPackageResolution() throws Exception {
+        Path project = Files.createTempDirectory("godogland-package-resolution");
+        try {
+            Files.writeString(project.resolve("go.mod"), "module ledgercalc\n");
+            Path features = Files.createDirectories(project.resolve("features"));
+            Path feature = features.resolve("regular_prime.feature");
+            Files.writeString(feature, "Feature: Regular prime\n");
+            Files.writeString(project.resolve("feature_test.go"), """
+                    package ledgercalc
+
+                    func InitializeScenario(ctx *godog.ScenarioContext) {}
+                    """);
+
+            assertEquals(".", GodogTestPackageResolver.packagePath(project.toString(), feature.toString()));
+            assertEquals(project.toString(), GodogTestPackageResolver.testDirectoryPath(project.toString(), feature.toString()));
+            assertEquals(project.toString(), GodogTestPackageResolver.executionRootDirectory(project.toString(), feature.toString()));
+            assertEquals("features/regular_prime.feature",
+                    GodogTestPackageResolver.relativeFeaturePath(project.toString(), feature.toString()));
+
+            Path nestedProject = Files.createTempDirectory("godogland-nested-package-resolution");
+            try {
+                Files.writeString(nestedProject.resolve("go.mod"), "module github.com/example/project\n");
+                Path nestedFeatures = Files.createDirectories(nestedProject.resolve("features"));
+                Path nestedFeature = nestedFeatures.resolve("training_points.feature");
+                Files.writeString(nestedFeature, "Feature: Training points\n");
+                Files.writeString(nestedFeatures.resolve("training_points_test.go"), """
+                        package features
+
+                        var suite = godog.TestSuite{}
+                        """);
+
+                assertEquals("./features", GodogTestPackageResolver.packagePath(nestedProject.toString(), nestedFeature.toString()));
+                assertEquals(nestedFeatures.toString(),
+                        GodogTestPackageResolver.testDirectoryPath(nestedProject.toString(), nestedFeature.toString()));
+                assertEquals(nestedProject.toString(),
+                        GodogTestPackageResolver.executionRootDirectory(nestedProject.toString(), nestedFeature.toString()));
+            } finally {
+                deleteRecursively(nestedProject);
+            }
+
+            Path workspace = Files.createTempDirectory("godogland-workspace-package-resolution");
+            try {
+                Path module = Files.createDirectories(workspace.resolve("ledgercalc"));
+                Files.writeString(module.resolve("go.mod"), "module ledgercalc\n");
+                Path moduleFeatures = Files.createDirectories(module.resolve("features"));
+                Path moduleFeature = moduleFeatures.resolve("offer_header.feature");
+                Files.writeString(moduleFeature, "Feature: Offer header\n");
+                Files.writeString(module.resolve("feature_test.go"), """
+                        package ledgercalc
+
+                        func InitializeScenario(ctx *godog.ScenarioContext) {}
+                        """);
+
+                assertEquals(".", GodogTestPackageResolver.packagePath(workspace.toString(), moduleFeature.toString()));
+                assertEquals(module.toString(),
+                        GodogTestPackageResolver.testDirectoryPath(workspace.toString(), moduleFeature.toString()));
+                assertEquals(module.toString(),
+                        GodogTestPackageResolver.executionRootDirectory(workspace.toString(), moduleFeature.toString()));
+                assertEquals("features/offer_header.feature",
+                        GodogTestPackageResolver.relativeFeaturePath(workspace.toString(), moduleFeature.toString()));
+            } finally {
+                deleteRecursively(workspace);
+            }
+        } finally {
+            deleteRecursively(project);
+        }
+    }
+
     private static void stepRegistrationRanges() {
         GodogStepRegistration registration = new GodogStepRegistration(null, "^step$", 10, 20);
 
@@ -178,6 +249,18 @@ public final class GodogPluginUnitTests {
         assertions++;
         if (condition) {
             throw new AssertionError(message);
+        }
+    }
+
+    private static void deleteRecursively(Path path) throws Exception {
+        if (path == null || !Files.exists(path)) {
+            return;
+        }
+
+        try (var paths = Files.walk(path)) {
+            for (Path current : paths.sorted((left, right) -> right.compareTo(left)).toList()) {
+                Files.deleteIfExists(current);
+            }
         }
     }
 

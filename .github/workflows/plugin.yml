@@ -12,10 +12,10 @@ permissions:
   contents: read
 
 env:
-  GOLAND_BUILD: 252.25557.175
-  GOLAND_VERSION: 2025.2.1
-  GOLAND_HOME: .task/ides/GoLand-2025.2.1
-  GHERKIN_PLUGIN_JAR: .task/plugins/gherkin-252.25557.175/gherkin/lib/gherkin.jar
+  GOLAND_BUILD: 261.22158.291
+  GOLAND_VERSION: 2026.1
+  GOLAND_HOME: .task/ides/GoLand-2026.1
+  GHERKIN_PLUGIN_JAR: .task/plugins/gherkin-261.22158.291/gherkin/lib/gherkin.jar
 
 jobs:
   plugin-tests:
